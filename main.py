@@ -18,7 +18,7 @@ def get_response(endpoint, offset, limit, area_id):
     return requests.get(url, headers=HEADERS, params=params)
 
 
-def get_data(endpoint, limit=100):
+def get_data(endpoint, limit=100, start_from_area_id=0):
     import time
     import os
     import pandas as pd
@@ -40,7 +40,7 @@ def get_data(endpoint, limit=100):
     # exit()
 
     # area_id = 1789
-    area_id = 0
+    area_id = start_from_area_id
     while area_id < 1790:
         print(f'Fetching data from: endpoint={endpoint}, area={area_id}')
 
@@ -78,7 +78,7 @@ def get_data(endpoint, limit=100):
 # print(a.status_code)
 # print(a.json())
 
-get_data('sold', limit=500)
+get_data('sold', limit=500, start_from_area_id=3)
 
 
 
