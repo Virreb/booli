@@ -74,11 +74,29 @@ def get_data(endpoint, limit=100, start_from_area_id=0):
         time.sleep(5)
 
 
+def combine_to_df(endpoint):
+    import pandas as pd
+    import os
+
+    base_path = f'data/{endpoint}'
+    df = pd.DataFrame()
+
+    for pkl in os.listdir(base_path):
+        path = f'{base_path}/{pkl}'
+        tmp_df = pd.read_pickle(path)
+        # df = pd.concat(df, tmp_df)
+        df = df.append(tmp_df)
+
+    print(df.describe())
+
+
 # a = get_response('sold', offset=0, limit=5, area_id=1)
 # print(a.status_code)
 # print(a.json())
 
-get_data('sold', limit=500, start_from_area_id=3)
+# get_data('sold', limit=500, start_from_area_id=3)
+combine_to_df('sold')
+
 
 
 
