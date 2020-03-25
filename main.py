@@ -1,108 +1,21 @@
+from src.data.make_dataset import combine_to_df, fetch_data, load_dataset
+
+# fetch_data('sold', limit=500, continue_from_last_area=True, start_from_area_id=13646, stop_at_area_id=15000)
+# combine_to_df(endpoint='sold', save_name='sold')
+
+df = load_dataset(save_name='sold')
+
+print(df.columns)
+print(df.info())
 
 
-def get_response(endpoint, offset, limit, area_id):
-    import secrets
-    from hashlib import sha1
-    import time
-    import requests
-    from init import BASE_URL, CALLER_ID, PRIVATE_KEY, HEADERS
+# print(df['location_region_countyName'].head(20))
+# print(df['location_region_municipalityName'].head(20))
 
-    url = f'{BASE_URL}/{endpoint}'
-    unix_time = str(int(time.time()))
-    unique_string = secrets.token_hex(8)
-    hash_str = sha1((CALLER_ID + unix_time + PRIVATE_KEY + unique_string).encode('utf-8')).hexdigest()
-
-    params = {'callerId': CALLER_ID, 'time': unix_time, 'unique': unique_string, 'hash': hash_str, 'limit': limit,
-              'offset': offset, 'areaId': area_id}
-
-    return requests.get(url, headers=HEADERS, params=params)
-
-
-def get_data(endpoint, limit=100, start_from_area_id=0, stop_at_area_id=3000):
-    import time
-    import os
-    import pandas as pd
-
-    base_save_path = f'data/{endpoint}'
-    if os.path.exists(base_save_path) is False:
-        os.makedirs(base_save_path)
-
-    # params = base_params.copy()
-    # params['bbox'] = "54.66870,11.3769,69.44847,24.9539"
-    # params['bbox'] = "59.34674,18.0603,59.64674,18.3603"
-    # params['bbox'] = "58.34674,17.0603,60.64674,19.3603"
-    # resp = requests.get(url, headers=headers, params=params)
-    # print(resp.status_code)
-    # if resp.status_code == 200:
-    #     print(resp.json())
-    #     result = resp.json()
-    # exit()
-
-    # area_id = 1789
-    area_id = start_from_area_id
-    while area_id <= stop_at_area_id:
-        print(f'Fetching data from: endpoint={endpoint}, area={area_id}')
-
-        total_count, offset = 1, 0      # init
-        all_data = []
-        while total_count > offset:
-            resp = get_response(endpoint, offset=offset, limit=limit, area_id=area_id)
-
-            if resp.status_code == 200:
-                result = resp.json()
-                total_count = result['totalCount']
-                offset += result['count']
-                all_data.extend(result[endpoint])
-
-            else:
-                print(f'Error {resp.status_code}')
-                break
-
-            time.sleep(0.2)     # sleep between every call to not create pressure on API
-
-        if len(all_data) == 0:
-            print(f'No items found.\n')
-        else:
-            save_path = f'{base_save_path}/{area_id}.pkl'
-            df = pd.json_normalize(all_data, sep='_')       # flatten dict
-            df.to_pickle(save_path)
-
-            print(f'Fetched {total_count} items. Saved to {save_path}\n')
-
-        area_id += 1
-        time.sleep(5)
-
-
-def combine_to_df(endpoint, save_name=None):
-    import pandas as pd
-    import os
-    import datetime
-
-    loading_path = f'data/{endpoint}'
-    date_today = datetime.date.today()
-
-    if save_name is None:
-        save_name = f'{endpoint}_{date_today}'
-
-    df = pd.DataFrame()
-
-    for file_name in os.listdir(loading_path):
-        path = f'{loading_path}/{file_name}'
-        tmp_df = pd.read_pickle(path)
-        # df = pd.concat(df, tmp_df)
-        df = df.append(tmp_df)
-
-    df.to_pickle(f'data/{save_name}.pkl')
-    print(df.info())
-
-
-# a = get_response('sold', offset=0, limit=5, area_id=1)
-# print(a.status_code)
-# print(a.json())
-
-# get_data('sold', limit=500, start_from_area_id=2870, stop_at_area_id=5000)
-combine_to_df('sold', save_name='sold')
-
-
-
-
+# print(df.shape, df.drop_duplicates().shape, df['booliId'].nunique())
+exit(0)
+gbg_mask = df['location_region_municipalityName'].isin(['Göteborg', 'Mölndal'])
+gbg_df = df[gbg_mask]
+# print(gbg_df['location_namedAreas'].head(20))
+print(gbg_df['location_namedAreas'].unique())
+print(gbg_df['location_namedAreas'].nunique())

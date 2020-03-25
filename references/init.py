@@ -11,3 +11,8 @@ BASE_URL = 'https://api.booli.se'
 
 if os.path.exists('data') is False:
     os.makedirs('data')
+
+for data_stage in ['raw', 'processed']:
+    if os.path.exists(f'data/{data_stage}') is False:
+        os.makedirs(f'data/{data_stage}')
+
