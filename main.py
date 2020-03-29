@@ -1,21 +1,23 @@
 from src.data.make_dataset import combine_to_df, fetch_data, load_dataset
+from src.data.transform_data import clean_data
+from src.features.create_features import create_features
 
-# fetch_data('sold', limit=500, continue_from_last_area=True, start_from_area_id=13646, stop_at_area_id=15000)
-# combine_to_df(endpoint='sold', save_name='sold')
+import pandas as pd
+pd.set_option('display.max_columns', 500)
 
-df = load_dataset(save_name='sold')
+endpoint = 'sold'
+# fetch_data(endpoint=endpoint, continue_from_last_area=True)
+# combine_to_df(endpoint=endpoint, save_filename=endpoint)
+# clean_data(save_filename=endpoint, load_filename=endpoint)
 
-print(df.columns)
-print(df.info())
+df = load_dataset(f'processed/{endpoint}')
+mask = df['municipality'].isin(['Göteborg'])
+gbg_df = df[mask]
 
+# create_features(save_filename='sold_gbg_features', df=df[mask])
+# gbg_df = load_dataset('processed/sold_gbg_features')
 
-# print(df['location_region_countyName'].head(20))
-# print(df['location_region_municipalityName'].head(20))
+print(gbg_df.head())
+print(gbg_df.shape)
 
-# print(df.shape, df.drop_duplicates().shape, df['booliId'].nunique())
-exit(0)
-gbg_mask = df['location_region_municipalityName'].isin(['Göteborg', 'Mölndal'])
-gbg_df = df[gbg_mask]
-# print(gbg_df['location_namedAreas'].head(20))
-print(gbg_df['location_namedAreas'].unique())
-print(gbg_df['location_namedAreas'].nunique())
+print(gbg_df.groupby('district')['sold_price'].mean().sort_values(ascending=False))

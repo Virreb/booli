@@ -1,6 +1,6 @@
 import json, os
 
-with open('credentials.json', 'r') as f:
+with open('references/credentials.json', 'r') as f:
     creds = json.load(f)
 
 CALLER_ID = creds['public_key']
@@ -12,7 +12,7 @@ BASE_URL = 'https://api.booli.se'
 if os.path.exists('data') is False:
     os.makedirs('data')
 
-for data_stage in ['raw', 'processed']:
+for data_stage in ['raw', 'interim', 'processed']:
     if os.path.exists(f'data/{data_stage}') is False:
         os.makedirs(f'data/{data_stage}')
 

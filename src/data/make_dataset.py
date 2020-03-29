@@ -1,23 +1,22 @@
+import pandas as pd
 
 
-def load_dataset(save_name):
-    import pandas as pd
-
-    return pd.read_pickle(f'data/processed/{save_name}.pkl')
+def load_dataset(path) -> pd.DataFrame():
+    return pd.read_pickle(f'data/{path}.pkl')
 
 
-def combine_to_df(endpoint, save_name=None):
+def combine_to_df(endpoint, save_filename=None):
     import pandas as pd
     import os
     import datetime
     import time
 
     print('Combining pickles to one dataframe')
-    loading_path = f'data/{endpoint}/raw'
+    loading_path = f'data/raw/{endpoint}'
     date_today = datetime.date.today()
 
-    if save_name is None:
-        save_name = f'{endpoint}_{date_today}'
+    if save_filename is None:
+        save_filename = f'{endpoint}_{date_today}'
 
     all_df = []
     start_time = time.time()
@@ -27,13 +26,13 @@ def combine_to_df(endpoint, save_name=None):
 
     df = pd.concat(all_df)
 
-    df.to_pickle(f'data/processed/{save_name}.pkl')
+    df.to_pickle(f'data/interim/{save_filename}.pkl')
     print(f'Job took {round((time.time() - start_time)/60, 2)} min')
 
     return df
 
 
-def fetch_data(endpoint, limit=100, continue_from_last_area=False, start_from_area_id=1, stop_at_area_id=3000):
+def fetch_data(endpoint, limit=100, continue_from_last_area=False, start_from_area_id=1, stop_at_area_id=15000):
     import time
     import os
     import pandas as pd
@@ -57,6 +56,7 @@ def fetch_data(endpoint, limit=100, continue_from_last_area=False, start_from_ar
             if continue_from_last_area is True:
                 start_from_area_id = status['last_checked_area']
 
+    # TODO: Test to fetch data in a box instead of looping over areas
     # params = base_params.copy()
     # params['bbox'] = "54.66870,11.3769,69.44847,24.9539"
     # params['bbox'] = "59.34674,18.0603,59.64674,18.3603"

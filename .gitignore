@@ -1,7 +1,7 @@
 # Custom
-credentials.json
-data
-.idea
+data/*
+.idea/
+references/credentials.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
