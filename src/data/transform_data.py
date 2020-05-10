@@ -5,7 +5,7 @@ def clean_data(save_filename: str, load_filename: str = None, df: DataFrame = No
     import pandas as pd
 
     if df is None:
-        df = pd.read_pickle(f'data/interim/{load_filename}.pkl')
+        df = pd.read_pickle(f'{load_filename}.pkl')
 
     # take first element of list to string (list always length 1, I think)
     # need to do this first as it creates errors having lists as values
@@ -39,11 +39,12 @@ def clean_data(save_filename: str, load_filename: str = None, df: DataFrame = No
     df.rename(columns=rename_cols, inplace=True)
 
     # Fix datetime
-    df['published'] = pd.to_datetime(df['published'], infer_datetime_format=True)
-    df['sold_date'] = pd.to_datetime(df['sold_date'], infer_datetime_format=True)
+    for date_col in ['published', 'sold_date']:
+        if date_col in df.columns:
+            df[date_col] = pd.to_datetime(df[date_col], infer_datetime_format=True)
 
     # save to file
-    df.to_pickle(f'data/processed/{save_filename}.pkl')
+    df.to_pickle(f'{save_filename}.pkl')
 
     return df
 

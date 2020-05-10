@@ -5,6 +5,25 @@ def load_dataset(path) -> pd.DataFrame():
     return pd.read_pickle(f'data/{path}.pkl')
 
 
+def combine_bbox_to_df(loading_path, save_path=None):
+    import pandas as pd
+
+    if save_path is None:
+        save_path = f'{loading_path}/all'
+
+    all_df = []
+    for endpoint, status in zip(['sold', 'listings'], [1, 0]):
+        path = f'{loading_path}/{endpoint}.pkl'
+        tmp_df = pd.read_pickle(path)
+        tmp_df['sold'] = status
+        all_df.append(tmp_df)
+
+    df = pd.concat(all_df)
+    df.to_pickle(f'{save_path}.pkl')
+
+    return df
+
+
 def combine_to_df(endpoint, save_filename=None):
     import pandas as pd
     import os
@@ -107,3 +126,57 @@ def fetch_data(endpoint, limit=100, continue_from_last_area=False, start_from_ar
         area_id += 1
         time.sleep(1)   # rest to be gentle on the api
 
+
+def fetch_bbox_data(endpoint, limit=100, location='gothenburg'):
+    import time
+    import os
+    import pandas as pd
+    from src.data.api import get_bbox_response
+    from tqdm import tqdm
+
+    for stage in ['raw', 'interim', 'processed']:
+        for path in [f'data/{stage}/bbox', f'data/{stage}/bbox/{location}']:
+            if os.path.exists(path) is False:
+                os.makedirs(path)
+
+    if location == 'gothenburg':
+        lat_low, long_low = 57.506682, 11.595467
+        lat_high, long_high = 57.885870, 12.326569
+    else:
+        print(f'"{location}" has not been implemented yet!')
+        exit(1)
+
+    total_count, offset = 1, 0      # init
+    all_data = []
+    with tqdm(total=100) as progress_bar:
+        while total_count > offset:
+            resp = get_bbox_response(endpoint, offset, limit, lat_low, long_low, lat_high, long_high)
+
+            if resp.status_code == 200:
+                result = resp.json()
+                total_count = result['totalCount']
+
+                if offset == 0:
+                    update_step = 100/(total_count/limit)   # nbr_runs = total_count/limit
+
+                offset += result['count']
+                all_data.extend(result[endpoint])
+
+            else:
+                print(f'Error {resp.status_code}')
+                break
+
+            time.sleep(0.2)     # sleep between every call to not create pressure on API
+            progress_bar.update(update_step)
+
+    print(f'Found {total_count} items')
+    progress_bar.close()
+
+    if len(all_data) == 0:
+        print(f'No items found.\n')
+    else:
+        save_path = f'data/raw/bbox/{location}/{endpoint}.pkl'
+        df = pd.json_normalize(all_data, sep='_')       # flatten dict
+        df.to_pickle(save_path)
+
+        print(f'Fetched {total_count} items. Saved to {save_path}\n')
