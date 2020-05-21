@@ -134,7 +134,7 @@ def fetch_bbox_data(endpoint, limit=100, location='gothenburg'):
     from src.data.api import get_bbox_response
     from tqdm import tqdm
 
-    for stage in ['raw', 'interim', 'processed']:
+    for stage in ['raw', 'interim', 'processed', 'features']:
         for path in [f'data/{stage}/bbox', f'data/{stage}/bbox/{location}']:
             if os.path.exists(path) is False:
                 os.makedirs(path)
