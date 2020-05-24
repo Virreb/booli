@@ -48,12 +48,31 @@ IMPORTANT_PLACES = {
 
 def create_features(df: DataFrame = None, location='gothenburg') -> DataFrame:
     import pandas as pd
+    import datetime
+    from tqdm import tqdm
+    import time
+    import multiprocessing
+    from joblib import Parallel, delayed
+
+    print('Calculating features')
+    features_start_time = time.time()
+
+    nbr_cores = multiprocessing.cpu_count()
+    nbr_workers = max([nbr_cores - 1, 1])  # have at least one worker
 
     if df is None:
         df = pd.read_pickle(f'data/processed/bbox/{location}/all.pkl')
 
     # only use sold objects
     df = df[df['sold'] == 1]
+
+    # only use apartments
+    # 1.7k radhus, 5k villa, 44k lägenhet, 0.5k fritidshus, 38 gård, 361 kedjehus, 340 parhus, 327 tomt/mark
+    df = df[df['object_type'] == 'Lägenhet']
+
+    # only use apartments in central GBG while testing
+    df = calculate_distances_to_point(lat=57.68187, lon=11.95904, df=df)
+    df = df[df['distance'] <= 3]
 
     # use lat and lon diff from central station
     df['lat_diff'] = df['latitude'] - IMPORTANT_PLACES[location]['centralstationen']['lat']
@@ -66,40 +85,87 @@ def create_features(df: DataFrame = None, location='gothenburg') -> DataFrame:
     df['rent_per_area'] = df['rent'] / df['living_area']
     df['sold_price_per_area'] = df['sold_price'] / df['living_area']
 
-    # cols_to_drop = ['living_area', 'additional_area', 'plot_area', 'rooms', 'rent', 'floor',
-    #                 'construction_year', 'object_type', 'published', 'sold_date', 'sold_price', 'district']
+    # don't use small agencies
+    agencies_df = df.groupby('source_name')['source_name'].count()
+    small_agencies_list = agencies_df.loc[agencies_df < 100].index  # only OHE agents that have sold more than 100
+    small_agencies_mask = df['source_name'].isin(small_agencies_list)
+    df.loc[small_agencies_mask, 'source_name'] = 'small_agent'    # replace name with "small_agent" if less than 100
 
-    # TODO: use list_price or not? maybe two different models?
+    df.reset_index(inplace=True)    # after filtering out data, create new index TODO: Memorize this
 
-    target = df.loc[:, ['sold_price', 'list_price']]
+    # Parallize vicinity features
+    split_size = 200
+    list_of_dfs = tqdm([df.loc[i:i + split_size - 1, :] for i in range(0, df.shape[0], split_size)])
 
-    cols_to_drop = ['published', 'booli_id', 'apartment_number', 'sold_price_source', 'url', 'street_address',
-                    'latitude', 'longitude', 'county', 'source_id', 'source_type', 'source_url',
-                    'location_position_isApproximate', 'district_written', 'biddingOpen', 'mortgageDeed',
-                    'seniorLiving', 'listPriceChangeDate', 'listPriceChange', 'sold', 'sold_price', 'list_price']
+    print(f'Calculating vicinity price_per_area statistics, {len(list_of_dfs)} chunks, {nbr_workers} in parallel')
+    par_result = Parallel(n_jobs=nbr_workers)(
+        delayed(calculate_vicinity_statistics)(df, tmp_df) for tmp_df in list_of_dfs
+    )
+    df = pd.concat(par_result, axis=0)
 
-    df.drop(columns=cols_to_drop, inplace=True)
-
-    print(df.groupby('district')['sold_price'].count().sort_values())
-    print(df.head())
-    print(df.columns)
-    exit()
-
-    columns_to_one_hot = ['object_type', 'district', 'source_type', 'source_name', 'municipality']
+    # columns_to_one_hot = ['district', 'source_name', 'municipality']
+    columns_to_one_hot = ['source_name', 'municipality']    # TODO: one model per object type? use district?
+    print(f'One hot encoding {columns_to_one_hot}')
     dummies_df = pd.get_dummies(df, columns=columns_to_one_hot)  # add areas later
 
     df.drop(columns=columns_to_one_hot, inplace=True)
     df = pd.concat([df, dummies_df], axis=1)
 
-    # TODO: Look into how to OHE areas in GBG
-    # TODO: Look into how to OHE seller
+    # TODO: Look into how to OHE areas in GBG. District is too aggregated. GeoJSON over primärområden?
+
+    cols_to_drop = ['published', 'booli_id', 'apartment_number', 'sold_price_source', 'url', 'street_address',
+                    'latitude', 'longitude', 'county', 'source_id', 'source_type', 'source_url',
+                    'location_position_isApproximate', 'district_written', 'biddingOpen', 'mortgageDeed',
+                    'seniorLiving', 'listPriceChangeDate', 'listPriceChange', 'sold']
+
+    df.drop(columns=cols_to_drop, inplace=True)
 
     df.to_pickle(f'data/features/bbox/{location}/features.pkl')
+    print(f'Done after {round((time.time() - features_start_time)/60, 1)}min with a total of {df.shape[1]} features on'
+          f'{df.shape[0]} objects')
 
     return df
 
 
-def calculate_distances_to_point(location, lat, lon, df=None):
+def calculate_vicinity_statistics(df, slice_df):
+    import datetime
+    import pandas as pd
+
+    mean_price_dist_limit = 0.5  # km
+    all_months_back = [3, 6, 12, 24]
+    all_vicinity_stats = []
+    df = df.copy(deep=True)
+    for idx, obj in slice_df.iterrows():
+        # TODO: use mean price for district here instead of vicinity?
+        df = calculate_distances_to_point(lat=obj['latitude'], lon=obj['longitude'], df=df)
+        vicinity_mask = df['distance'] <= mean_price_dist_limit
+
+        obj_vicinity_stats = [idx]
+        for months_back in all_months_back:
+            date_limit = obj['sold_date'] - datetime.timedelta(days=months_back * 30)
+            mask = (df['sold_date'] >= date_limit) & vicinity_mask
+
+            obj_vicinity_stats.extend([
+                df.loc[mask, 'sold_price_per_area'].min(),
+                df.loc[mask, 'sold_price_per_area'].mean(),
+                df.loc[mask, 'sold_price_per_area'].max(),
+                df.loc[mask, 'sold_price_per_area'].count()
+            ])
+
+        all_vicinity_stats.append(obj_vicinity_stats)
+
+    cols = [f'vicinity_{agg}_{months}_months' for months in all_months_back
+            for agg in ['min_price_per_area', 'mean_price_per_area', 'max_price_per_area', 'count']]
+    cols.insert(0, 'index')
+
+    stats_df = pd.DataFrame(data=all_vicinity_stats, columns=cols)
+    stats_df.set_index('index', inplace=True)
+    slice_df = pd.concat([slice_df, stats_df], axis=1)
+
+    return slice_df
+
+
+def calculate_distances_to_point(lat, lon, location=None, df=None):
     import pandas as pd
 
     if df is None:
@@ -125,8 +191,11 @@ def haversine(row, lat1, lon1):
 
 
 def get_distances_to_important_places(location, df=None, save_path=None):
+    from tqdm import tqdm
+    nbr_places = len(IMPORTANT_PLACES[location])
 
-    for place_name in IMPORTANT_PLACES[location]:
+    print(f'Calculating distances to {nbr_places} important places')
+    for place_name in tqdm(IMPORTANT_PLACES[location], total=nbr_places):
         place = IMPORTANT_PLACES[location][place_name]
         df[f'distance_to_{place_name}'] = df.apply(lambda row: haversine(row, place['lat'], place['lon']), axis=1)
 
