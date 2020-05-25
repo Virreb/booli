@@ -102,7 +102,7 @@ def create_features(df: DataFrame = None, location='gothenburg') -> DataFrame:
         delayed(calculate_vicinity_statistics)(df, tmp_df) for tmp_df in list_of_dfs
     )
     df = pd.concat(par_result, axis=0)
-
+    # TODO: Look why columns before this exists twice, maybe inside the vicinity function?
     # columns_to_one_hot = ['district', 'source_name', 'municipality']
     columns_to_one_hot = ['source_name', 'municipality']    # TODO: one model per object type? use district?
     print(f'One hot encoding {columns_to_one_hot}')
@@ -111,12 +111,15 @@ def create_features(df: DataFrame = None, location='gothenburg') -> DataFrame:
     df.drop(columns=columns_to_one_hot, inplace=True)
     df = pd.concat([df, dummies_df], axis=1)
 
-    # TODO: Look into how to OHE areas in GBG. District is too aggregated. GeoJSON over primärområden?
+    df['sold_year'] = df['sold_date'].dt.year
+    df['sold_month'] = df['sold_date'].dt.month
 
+    # TODO: Look into how to OHE areas in GBG. District is too aggregated. GeoJSON over primärområden?
     cols_to_drop = ['published', 'booli_id', 'apartment_number', 'sold_price_source', 'url', 'street_address',
                     'latitude', 'longitude', 'county', 'source_id', 'source_type', 'source_url',
                     'location_position_isApproximate', 'district_written', 'biddingOpen', 'mortgageDeed',
-                    'seniorLiving', 'listPriceChangeDate', 'listPriceChange', 'sold']
+                    'seniorLiving', 'listPriceChangeDate', 'listPriceChange', 'sold', 'distance', 'object_type',
+                    'sold_date']
 
     df.drop(columns=cols_to_drop, inplace=True)
 

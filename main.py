@@ -1,7 +1,7 @@
 from src.data.make_dataset import combine_to_df, fetch_data, fetch_bbox_data, load_dataset, combine_bbox_to_df
 from src.data.transform_data import clean_data
 from src.features.create_features import create_features, calculate_distances_to_point
-
+from src.models import model_xgboost
 import pandas as pd
 pd.set_option('display.max_columns', 500)
 
@@ -18,8 +18,8 @@ location = 'gothenburg'
 #            save_filename=f'data/processed/bbox/{location}/{endpoint}')
 
 # combine_bbox_to_df(loading_path=f'data/processed/bbox/{location}')
-
-df = create_features(location=location)
+model_xgboost.train()
+# df = create_features(location=location)
 exit(0)
 
 # df = load_dataset(f'processed/{endpoint}')
