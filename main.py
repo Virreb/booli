@@ -18,8 +18,8 @@ location = 'gothenburg'
 #            save_filename=f'data/processed/bbox/{location}/{endpoint}')
 
 # combine_bbox_to_df(loading_path=f'data/processed/bbox/{location}')
-model_xgboost.train()
-# df = create_features(location=location)
+# model_xgboost.train()
+df = create_features(location=location)
 exit(0)
 
 # df = load_dataset(f'processed/{endpoint}')

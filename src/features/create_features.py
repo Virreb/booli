@@ -58,6 +58,7 @@ def create_features(df: DataFrame = None, location='gothenburg') -> DataFrame:
     features_start_time = time.time()
 
     nbr_cores = multiprocessing.cpu_count()
+    nbr_cores = 1
     nbr_workers = max([nbr_cores - 1, 1])  # have at least one worker
 
     if df is None:
@@ -94,22 +95,27 @@ def create_features(df: DataFrame = None, location='gothenburg') -> DataFrame:
     df.reset_index(inplace=True)    # after filtering out data, create new index TODO: Memorize this
 
     # Parallize vicinity features
-    split_size = 200
-    list_of_dfs = tqdm([df.loc[i:i + split_size - 1, :] for i in range(0, df.shape[0], split_size)])
-
+    split_size = 20
+    list_of_dfs = [df.loc[i:i + split_size - 1, :] for i in range(0, df.shape[0], split_size)][:2]
+    list_of_dfs = tqdm(list_of_dfs)
+    print('\nMain DF', df.shape)
     print(f'Calculating vicinity price_per_area statistics, {len(list_of_dfs)} chunks, {nbr_workers} in parallel')
     par_result = Parallel(n_jobs=nbr_workers)(
         delayed(calculate_vicinity_statistics)(df, tmp_df) for tmp_df in list_of_dfs
     )
     df = pd.concat(par_result, axis=0)
+    print('\nMain combined DF', df.shape)
     # TODO: Look why columns before this exists twice, maybe inside the vicinity function?
     # columns_to_one_hot = ['district', 'source_name', 'municipality']
     columns_to_one_hot = ['source_name', 'municipality']    # TODO: one model per object type? use district?
     print(f'One hot encoding {columns_to_one_hot}')
     dummies_df = pd.get_dummies(df, columns=columns_to_one_hot)  # add areas later
-
+    # TODO: DUMMIES DF IS PROBABLY THE ERROR, CONTAINS ALL COLS. CHECK WHY .dt DOES NOT WORK
+    print('\nDummies DF', dummies_df.shape)
     df.drop(columns=columns_to_one_hot, inplace=True)
     df = pd.concat([df, dummies_df], axis=1)
+
+    print('\nMain OHE DF', df.shape)
 
     df['sold_year'] = df['sold_date'].dt.year
     df['sold_month'] = df['sold_date'].dt.month
@@ -122,6 +128,9 @@ def create_features(df: DataFrame = None, location='gothenburg') -> DataFrame:
                     'sold_date']
 
     df.drop(columns=cols_to_drop, inplace=True)
+    print('Dropping cols:', len(cols_to_drop))
+    print('\nFinal DF', df.shape)
+    exit(0)
 
     df.to_pickle(f'data/features/bbox/{location}/features.pkl')
     print(f'Done after {round((time.time() - features_start_time)/60, 1)}min with a total of {df.shape[1]} features on'
@@ -140,6 +149,7 @@ def calculate_vicinity_statistics(df, slice_df):
     df = df.copy(deep=True)
     for idx, obj in slice_df.iterrows():
         # TODO: use mean price for district here instead of vicinity?
+        # TODO: Save distances to and from all objects static and update online instead?
         df = calculate_distances_to_point(lat=obj['latitude'], lon=obj['longitude'], df=df)
         vicinity_mask = df['distance'] <= mean_price_dist_limit
 
@@ -148,6 +158,7 @@ def calculate_vicinity_statistics(df, slice_df):
             date_limit = obj['sold_date'] - datetime.timedelta(days=months_back * 30)
             mask = (df['sold_date'] >= date_limit) & vicinity_mask
 
+            # TODO: Normalize to sold_price for actual object?
             obj_vicinity_stats.extend([
                 df.loc[mask, 'sold_price_per_area'].min(),
                 df.loc[mask, 'sold_price_per_area'].mean(),
@@ -161,9 +172,17 @@ def calculate_vicinity_statistics(df, slice_df):
             for agg in ['min_price_per_area', 'mean_price_per_area', 'max_price_per_area', 'count']]
     cols.insert(0, 'index')
 
+    print('Slice df', slice_df.shape)
+
     stats_df = pd.DataFrame(data=all_vicinity_stats, columns=cols)
     stats_df.set_index('index', inplace=True)
+
+    print('Stats df', stats_df.shape)
+
     slice_df = pd.concat([slice_df, stats_df], axis=1)
+
+    print('Combined df', slice_df.shape)
+    print(slice_df.columns)
 
     return slice_df
 
