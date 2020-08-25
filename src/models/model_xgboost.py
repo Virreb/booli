@@ -15,14 +15,10 @@ def train(location='gothenburg', df=None):
     training_start_time = time.time()
 
     if df is None:
-        df = pd.read_pickle(f'data/features/bbox/{location}/features.pkl')
+        df = pd.read_pickle(f'data/features/{location}/features.pkl')
 
     target_col = 'sold_price'
-    print(len(set(df.columns)))
-    print(df.columns[50:])
-    print(df['sold_date'].describe())
-    df['sold_date'] = pd.to_datetime(df['sold_date']).dt.year
-    x = df.drop(columns=[target_col, 'list_price', 'object_type']).values   # remove object type
+    x = df.drop(columns=[target_col]).values   # remove object type
     y = df.loc[:, target_col].values
 
     # TODO: check scaler
@@ -49,4 +45,3 @@ def train(location='gothenburg', df=None):
 
     model.save_model('models/xgboost.pkl')
 
-    return 1

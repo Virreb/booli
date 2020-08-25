@@ -48,7 +48,6 @@ IMPORTANT_PLACES = {
 
 def create_features(df: DataFrame = None, location='gothenburg') -> DataFrame:
     import pandas as pd
-    import datetime
     from tqdm import tqdm
     import time
     import multiprocessing
@@ -58,19 +57,20 @@ def create_features(df: DataFrame = None, location='gothenburg') -> DataFrame:
     features_start_time = time.time()
 
     nbr_cores = multiprocessing.cpu_count()
-    nbr_cores = 1
     nbr_workers = max([nbr_cores - 1, 1])  # have at least one worker
 
     if df is None:
-        df = pd.read_pickle(f'data/processed/bbox/{location}/all.pkl')
+        df = pd.read_pickle(f'data/processed/{location}/all.pkl')
 
     # only use sold objects
     df = df[df['sold'] == 1]
 
+    # TODO: Expand to one model per object type
     # only use apartments
     # 1.7k radhus, 5k villa, 44k lägenhet, 0.5k fritidshus, 38 gård, 361 kedjehus, 340 parhus, 327 tomt/mark
     df = df[df['object_type'] == 'Lägenhet']
 
+    # TODO: remove this?
     # only use apartments in central GBG while testing
     df = calculate_distances_to_point(lat=57.68187, lon=11.95904, df=df)
     df = df[df['distance'] <= 3]
@@ -95,44 +95,54 @@ def create_features(df: DataFrame = None, location='gothenburg') -> DataFrame:
     df.reset_index(inplace=True)    # after filtering out data, create new index TODO: Memorize this
 
     # Parallize vicinity features
-    split_size = 20
-    list_of_dfs = [df.loc[i:i + split_size - 1, :] for i in range(0, df.shape[0], split_size)][:2]
+    split_size = 50
+    list_of_dfs = [df.loc[i:i + split_size - 1, :] for i in range(0, df.shape[0], split_size)]
     list_of_dfs = tqdm(list_of_dfs)
-    print('\nMain DF', df.shape)
+
+    print('Before')
+    print(len(list(df.columns)))
+    print(len(set(df.columns)))
+
+    # TODO: Precalc stats for every area instead
     print(f'Calculating vicinity price_per_area statistics, {len(list_of_dfs)} chunks, {nbr_workers} in parallel')
     par_result = Parallel(n_jobs=nbr_workers)(
         delayed(calculate_vicinity_statistics)(df, tmp_df) for tmp_df in list_of_dfs
     )
     df = pd.concat(par_result, axis=0)
-    print('\nMain combined DF', df.shape)
-    # TODO: Look why columns before this exists twice, maybe inside the vicinity function?
-    # columns_to_one_hot = ['district', 'source_name', 'municipality']
-    columns_to_one_hot = ['source_name', 'municipality']    # TODO: one model per object type? use district?
+
+    print('Vicinity')
+    print(len(list(df.columns)))
+    print(len(set(df.columns)))
+
+    columns_to_one_hot = ['source_name', 'municipality']
     print(f'One hot encoding {columns_to_one_hot}')
-    dummies_df = pd.get_dummies(df, columns=columns_to_one_hot)  # add areas later
-    # TODO: DUMMIES DF IS PROBABLY THE ERROR, CONTAINS ALL COLS. CHECK WHY .dt DOES NOT WORK
-    print('\nDummies DF', dummies_df.shape)
-    df.drop(columns=columns_to_one_hot, inplace=True)
-    df = pd.concat([df, dummies_df], axis=1)
+    df = pd.get_dummies(df, columns=columns_to_one_hot)  # add areas later
 
-    print('\nMain OHE DF', df.shape)
+    print('One-hot')
+    print(len(list(df.columns)))
+    print(len(set(df.columns)))
 
+    # fix datetime
     df['sold_year'] = df['sold_date'].dt.year
     df['sold_month'] = df['sold_date'].dt.month
 
     # TODO: Look into how to OHE areas in GBG. District is too aggregated. GeoJSON over primärområden?
+    # TODO: remove list_price from features?
     cols_to_drop = ['published', 'booli_id', 'apartment_number', 'sold_price_source', 'url', 'street_address',
                     'latitude', 'longitude', 'county', 'source_id', 'source_type', 'source_url',
                     'location_position_isApproximate', 'district_written', 'biddingOpen', 'mortgageDeed',
                     'seniorLiving', 'listPriceChangeDate', 'listPriceChange', 'sold', 'distance', 'object_type',
-                    'sold_date']
+                    'sold_date', 'list_price', 'district']
 
     df.drop(columns=cols_to_drop, inplace=True)
     print('Dropping cols:', len(cols_to_drop))
     print('\nFinal DF', df.shape)
-    exit(0)
 
-    df.to_pickle(f'data/features/bbox/{location}/features.pkl')
+    print('Final')
+    print(len(list(df.columns)))
+    print(len(set(df.columns)))
+
+    df.to_pickle(f'data/features/{location}/features.pkl')
     print(f'Done after {round((time.time() - features_start_time)/60, 1)}min with a total of {df.shape[1]} features on'
           f'{df.shape[0]} objects')
 
@@ -148,7 +158,7 @@ def calculate_vicinity_statistics(df, slice_df):
     all_vicinity_stats = []
     df = df.copy(deep=True)
     for idx, obj in slice_df.iterrows():
-        # TODO: use mean price for district here instead of vicinity?
+        # TODO: use mean price for district here instead of vicinity and precalculate it!!
         # TODO: Save distances to and from all objects static and update online instead?
         df = calculate_distances_to_point(lat=obj['latitude'], lon=obj['longitude'], df=df)
         vicinity_mask = df['distance'] <= mean_price_dist_limit
@@ -172,17 +182,10 @@ def calculate_vicinity_statistics(df, slice_df):
             for agg in ['min_price_per_area', 'mean_price_per_area', 'max_price_per_area', 'count']]
     cols.insert(0, 'index')
 
-    print('Slice df', slice_df.shape)
-
     stats_df = pd.DataFrame(data=all_vicinity_stats, columns=cols)
     stats_df.set_index('index', inplace=True)
 
-    print('Stats df', stats_df.shape)
-
     slice_df = pd.concat([slice_df, stats_df], axis=1)
-
-    print('Combined df', slice_df.shape)
-    print(slice_df.columns)
 
     return slice_df
 
@@ -191,7 +194,7 @@ def calculate_distances_to_point(lat, lon, location=None, df=None):
     import pandas as pd
 
     if df is None:
-        df = pd.read_pickle(f'data/processed/bbox{location}/all.pkl')
+        df = pd.read_pickle(f'data/processed/{location}/all.pkl')
 
     df['distance'] = df.apply(lambda row: haversine(row, lat, lon), axis=1)
 
@@ -214,9 +217,14 @@ def haversine(row, lat1, lon1):
 
 def get_distances_to_important_places(location, df=None, save_path=None):
     from tqdm import tqdm
+    import time
     nbr_places = len(IMPORTANT_PLACES[location])
 
+    # TODO: Cache this result
+
     print(f'Calculating distances to {nbr_places} important places')
+    time.sleep(0.1)  # fix logging to look prettier
+
     for place_name in tqdm(IMPORTANT_PLACES[location], total=nbr_places):
         place = IMPORTANT_PLACES[location][place_name]
         df[f'distance_to_{place_name}'] = df.apply(lambda row: haversine(row, place['lat'], place['lon']), axis=1)
