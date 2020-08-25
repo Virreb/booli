@@ -45,3 +45,5 @@ def train(location='gothenburg', df=None):
 
     model.save_model('models/xgboost.pkl')
 
+    print(f'Training done after {round((time.time() - training_start_time)/60, 1)}min')
+

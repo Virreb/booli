@@ -99,10 +99,6 @@ def create_features(df: DataFrame = None, location='gothenburg') -> DataFrame:
     list_of_dfs = [df.loc[i:i + split_size - 1, :] for i in range(0, df.shape[0], split_size)]
     list_of_dfs = tqdm(list_of_dfs)
 
-    print('Before')
-    print(len(list(df.columns)))
-    print(len(set(df.columns)))
-
     # TODO: Precalc stats for every area instead
     print(f'Calculating vicinity price_per_area statistics, {len(list_of_dfs)} chunks, {nbr_workers} in parallel')
     par_result = Parallel(n_jobs=nbr_workers)(
@@ -110,17 +106,9 @@ def create_features(df: DataFrame = None, location='gothenburg') -> DataFrame:
     )
     df = pd.concat(par_result, axis=0)
 
-    print('Vicinity')
-    print(len(list(df.columns)))
-    print(len(set(df.columns)))
-
     columns_to_one_hot = ['source_name', 'municipality']
     print(f'One hot encoding {columns_to_one_hot}')
     df = pd.get_dummies(df, columns=columns_to_one_hot)  # add areas later
-
-    print('One-hot')
-    print(len(list(df.columns)))
-    print(len(set(df.columns)))
 
     # fix datetime
     df['sold_year'] = df['sold_date'].dt.year
@@ -138,12 +126,8 @@ def create_features(df: DataFrame = None, location='gothenburg') -> DataFrame:
     print('Dropping cols:', len(cols_to_drop))
     print('\nFinal DF', df.shape)
 
-    print('Final')
-    print(len(list(df.columns)))
-    print(len(set(df.columns)))
-
     df.to_pickle(f'data/features/{location}/features.pkl')
-    print(f'Done after {round((time.time() - features_start_time)/60, 1)}min with a total of {df.shape[1]} features on'
+    print(f'Done after {round((time.time() - features_start_time)/60, 1)}min with a total of {df.shape[1]} features on '
           f'{df.shape[0]} objects')
 
     return df
